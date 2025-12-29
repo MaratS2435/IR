@@ -1,0 +1,436 @@
+\documentclass[12pt,a4paper]{report}
+\usepackage{graphicx}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english, russian]{babel}
+\usepackage{csquotes}
+\usepackage{textcomp}
+\usepackage{fancyhdr}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{float}
+
+\lstset{
+    backgroundcolor=\color{gray!10},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60},
+    stringstyle=\color{orange},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    frame=single,
+}
+
+\geometry{left=2cm,right=2cm,top=2cm,bottom=2cm}
+
+\begin{document}
+
+\begin{titlepage}
+\begin{center}
+\bfseries
+
+{\Large Московский авиационный институт\\ (национальный исследовательский университет)}
+
+\vspace{48pt}
+
+{\large Факультет информационных технологий и прикладной математики}
+
+\vspace{36pt}
+
+{\large Кафедра вычислительной математики и~программирования}
+
+
+\vspace{48pt}
+
+Лабораторная работа \textnumero 2 по курсу \enquote{Информационный поиск}
+
+\end{center}
+
+\vspace{150pt}
+
+\begin{flushright}
+    \begin{tabular}{rl}
+        Студент: & М.\,М. Сисенов \\
+        Преподаватель: & А.\,А. Кухтичев \\
+        Группа: & М8О-410Б \\
+        Дата: & \\
+        Оценка: & \\
+        Подпись: & \\
+    \end{tabular}
+\end{flushright}
+
+\vfill
+
+\begin{center}
+    \bfseries
+    Москва, \the\year
+\end{center}
+\end{titlepage}
+
+\pagebreak
+
+\section*{Лабораторная работа \textnumero 2 \enquote{Поисковый робот}} 
+
+Необходимо написать парсер на любом языке программирования:
+\begin{itemize}
+    \item Написать поисковый робот — компоненты обкачки документов, используя любой язык программирования.
+    \item Единственным аргументом поисковому роботу подаётся файл конфигурации (формата YAML или JSON), в котором содержатся параметры работы программы.
+    \item База данных должна быть запущена в docker-контейнере, можно использовать docker-compose.
+    \item В качестве хранилища результатов использовать MongoDB или PostgreSQL.
+    \item Робот должен применять нормализацию URL-адресов.
+    \item Робот должен сохранять в БД сырой HTML документа.
+    \item Необходимо сохранять метаинформацию о каждом документе (дата скачивания, источник URL и т.д.).
+    \item При остановке работы робот должен сохранять контрольную точку так, чтобы при повторном запуске он мог продолжить работу с того документа, с которого он остановился.
+    \item Периодически он должен уметь переобкачивать документы, которые уже есть в базе, но только в том случае, если они изменились.
+\end{itemize}
+
+\pagebreak
+
+\section*{Задание}
+
+Требуется реализовать веб-краулер (поисковый робот), который автоматически собирает документы с психологических порталов \textbf{b17.ru} и \textbf{psychologies.ru}, выбранных в лабораторной работе №1. Робот должен сохранять полный HTML-контент страниц в базу данных MongoDB вместе с метаинформацией, обеспечивать возможность остановки/возобновления работы и отслеживать изменения документов.
+
+\section*{Выбор языка программирования и технологий}
+
+Для реализации поискового робота был выбран язык программирования \textbf{Python} \\
+
+\textbf{Стек технологий:}
+\begin{itemize}
+    \item \textbf{Язык}: Python 3.12.3
+    \item \textbf{База данных}: MongoDB 8.x
+    \item \textbf{HTTP-клиент}: \texttt{requests}
+    \item \textbf{HTML-парсинг}: \texttt{BeautifulSoup4} (библиотека bs4)
+    \item \textbf{Работа с БД}: \texttt{pymongo}
+    \item \textbf{Конфигурация}: YAML (\texttt{PyYAML})
+\end{itemize}
+
+\section*{Схема работы}
+
+\begin{enumerate}
+    \item \textbf{Инициализация}: Чтение конфигурации из YAML-файла, подключение к MongoDB и создание уникальных индексов для URL.
+    \item \textbf{Управление состоянием}: Использование JSON-файла для хранения номеров страниц, на которых остановился сборщик ссылок (Harvester).
+    \item \textbf{Этап 1: Сбор ссылок (Harvesting)}:
+    \begin{itemize}
+        \item Обход страниц-списков в разделах статей;
+        \item Извлечение и нормализация URL;
+        \item Проверка необходимости обкачки (отсутствие в базе или истечение заданного интервала времени);
+        \item Добавление уникальных ссылок в коллекцию-очередь задач MongoDB.
+    \end{itemize}
+    \item \textbf{Этап 2: Обкачка контента (Crawling)}:
+    \begin{itemize}
+        \item Извлечение задач из очереди;
+        \item Загрузка HTML-контента с соблюдением задержек;
+        \item Извлечение очищенного текста и заголовка.
+    \end{itemize}
+    \item \textbf{Отслеживание изменений}: Сравнение нового очищенного текста с версией из базы данных. Если текст не изменился, обновляется только метка времени обкачки.
+    \item \textbf{Сохранение}: Запись документов с полями URL, источник, заголовок, «сырой» HTML, очищенный текст и время обкачки в формате Unix timestamp.
+\end{enumerate}
+
+\pagebreak
+
+\section*{Реализация}
+
+\subsection*{1. Конфигурационный файл (config.yaml)}
+
+\begin{lstlisting}
+db:
+  host: "localhost"
+  port: 27017
+  name: "search_engine_db"
+  collection_articles: "articles_v5"
+  collection_queue: "task_queue"
+
+logic:
+  delay_min: 1.0
+  delay_max: 3.0
+  recrawl_interval: 86400
+  state_file: "crawler_state.json"
+\end{lstlisting}
+
+\subsection*{2. Структура документа в MongoDB}
+
+\begin{lstlisting}[language=Python]
+doc = {
+    'url': url,
+    'source': source,
+    'title': title,
+    'raw_html': html,
+    'clean_text': text,
+    'timestamp': time.time()
+}
+\end{lstlisting}
+
+\textbf{Пояснение полей:}
+\begin{itemize}
+    \item \texttt{url} — нормализованный URL документа
+    \item \texttt{source} — название ресурса
+    \item \texttt{title} — Название статьи
+    \item \texttt{raw\_html} — полный HTML-контент страницы
+    \item \texttt{clean\_text} — очищенный полезный текст
+    \item \texttt{timestamp} — timestamp скачивания (Unix-время)
+\end{itemize}
+
+\subsection*{3. Нормализация URL}
+
+\begin{lstlisting}[language=Python]
+def normalize_url(url):
+    parsed = urlparse(url)
+    clean_url = urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path, '', '', ''))
+    if clean_url.endswith('/'):
+        clean_url = clean_url[:-1]
+    return clean_url
+\end{lstlisting}
+
+
+При запуске краулер проверяет наличие checkpoint.json и продолжает работу с последнего обработанного URL.
+
+\pagebreak
+
+\section*{Исходный код}
+
+\begin{lstlisting}[language=Python]
+import requests
+from bs4 import BeautifulSoup
+from pymongo import MongoClient
+import time
+import random
+import json
+import os
+import sys
+import yaml
+import argparse
+from urllib.parse import urlparse, urlunparse
+
+
+def load_config(path):
+    with open(path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+parser = argparse.ArgumentParser(description='Search Robot')
+parser.add_argument('config', type=str, help='Path to config.yaml')
+args = parser.parse_args()
+
+cfg = load_config(args.config)
+
+client = MongoClient(cfg['db']['host'], cfg['db']['port'])
+db = client[cfg['db']['name']]
+a_coll = db[cfg['db']['collection_articles']]
+q_coll = db[cfg['db']['collection_queue']]
+
+a_coll.create_index("url", unique=True)
+q_coll.create_index("url", unique=True)
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
+}
+
+
+def normalize_url(url):
+    parsed = urlparse(url)
+    clean_url = urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path, '', '', ''))
+    if clean_url.endswith('/'):
+        clean_url = clean_url[:-1]
+    return clean_url
+
+
+def load_state():
+    if os.path.exists(cfg['logic']['state_file']):
+        with open(cfg['logic']['state_file'], 'r') as f:
+            return json.load(f)
+    return {"b17_page": 1, "psych_page": 1}
+
+
+def save_state(b17_p, psych_p):
+    with open(cfg['logic']['state_file'], 'w') as f:
+        json.dump({"b17_page": b17_p, "psych_page": psych_p}, f)
+
+
+def add_to_queue(url, source):
+    url = normalize_url(url)
+    existing_doc = a_coll.find_one({'url': url})
+
+    if existing_doc:
+        last_scan = existing_doc.get('timestamp', 0)
+        if time.time() - last_scan < cfg['logic']['recrawl_interval']:
+            return False
+        else:
+            print(f"Re-crawl: {url}")
+
+    try:
+        q_coll.update_one(
+            {'url': url},
+            {'$set': {'url': url, 'source': source, 'added_at': time.time()}},
+            upsert=True
+        )
+        return True
+    except:
+        return False
+
+
+def harvest_lists():
+    state = load_state()
+    b17_page = state['b17_page']
+    psych_page = state['psych_page']
+
+    print("Starting harvester...")
+
+    try:
+        while True:
+            # B17
+            try:
+                r = requests.get(f"https://www.b17.ru/article/?page={b17_page}", headers=HEADERS)
+                if r.status_code == 200:
+                    soup = BeautifulSoup(r.text, 'lxml')
+                    links = soup.find_all('a', href=True)
+                    if not links:
+                        break
+
+                    count = 0
+                    for a in links:
+                        href = a['href'].split('#')[0]
+                        if href.startswith('/article/') and href.count('/') == 3:
+                            if add_to_queue("https://www.b17.ru" + href, 'b17'):
+                                count += 1
+                    print(f"B17 page {b17_page}: {count} added")
+                    b17_page += 1
+            except Exception as e:
+                print(f"Error B17: {e}")
+
+            time.sleep(1)
+
+            # Psychologies
+            try:
+                r = requests.get(f"https://www.psychologies.ru/articles/{psych_page}/", headers=HEADERS)
+                if r.status_code == 200:
+                    soup = BeautifulSoup(r.text, 'lxml')
+                    count = 0
+                    for a in soup.select('a.rubric-anons_title, .rubric-anons_list a.link'):
+                        href = a.get('href')
+                        if href:
+                            full = href if href.startswith('http') else "https://www.psychologies.ru" + href
+                            if add_to_queue(full, 'psychologies'):
+                                count += 1
+                    print(f"Psych page {psych_page}: {count} added")
+                    psych_page += 1
+            except Exception as e:
+                print(f"Error Psych: {e}")
+
+            save_state(b17_page, psych_page)
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+        print("\nStopped.")
+
+
+def process_queue():
+    print(f"Crawler started (Delay: {cfg['logic']['delay_min']}-{cfg['logic']['delay_max']}s)")
+
+    while True:
+        task = q_coll.find_one_and_delete({})
+        if not task:
+            print("Queue empty.")
+            break
+
+        url = task['url']
+        source = task['source']
+
+        time.sleep(random.uniform(cfg['logic']['delay_min'], cfg['logic']['delay_max']))
+
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            if r.status_code == 200:
+                html = r.text
+                soup = BeautifulSoup(html, 'lxml')
+
+                if source == 'b17':
+                    title, text = extract_b17_data(soup)
+                else:
+                    title, text = extract_psych_data(soup)
+
+                if len(text) > 200:
+                    old_doc = a_coll.find_one({'url': url})
+                    if old_doc and old_doc.get('clean_text') == text:
+                        a_coll.update_one({'url': url}, {'$set': {'timestamp': time.time()}})
+                        print(f"Unchanged: {url}")
+                    else:
+                        doc = {
+                            'url': url,
+                            'source': source,
+                            'title': title,
+                            'raw_html': html,
+                            'clean_text': text,
+                            'timestamp': time.time()
+                        }
+                        a_coll.replace_one({'url': url}, doc, upsert=True)
+                        action = "Updated" if old_doc else "Saved"
+                        print(f"{action}: {url}")
+                else:
+                    print(f"Short content skip: {url}")
+            else:
+                print(f"Status {r.status_code}: {url}")
+        except Exception as e:
+            print(f"Network error: {url} {e}")
+
+
+def extract_b17_data(soup):
+    title_tag = soup.find('h1', class_='from_bb_h1') or soup.find('h1')
+    title = title_tag.get_text(strip=True) if title_tag else "No Title"
+    content_div = soup.find('div', attrs={'itmprp': 'articleBody'}) or \
+                  soup.find('div', attrs={'itemprop': 'articleBody'}) or \
+                  soup.find('div', id='article_body')
+    if content_div:
+        for j in content_div.find_all('div', class_='art_start'): j.decompose()
+        for t in content_div(['script', 'style']): t.decompose()
+        return title, content_div.get_text(separator=' ', strip=True)
+    return title, ""
+
+
+def extract_psych_data(soup):
+    title_tag = soup.find('h1', class_='article__title')
+    title = title_tag.get_text(strip=True) if title_tag else "No Title"
+    parts = []
+    lead = soup.find('p', class_='article__lead-paragraph')
+    if lead: parts.append(lead.get_text(strip=True))
+    body = soup.find('section', attrs={'itemprop': 'articleBody'})
+    if body:
+        for bl in body.find_all('div', class_='article__block_type-text'):
+            parts.append(bl.get_text(separator=' ', strip=True))
+    return title, " ".join(parts)
+
+
+if __name__ == "__main__":
+    print("1. Harvest")
+    print("2. Crawl")
+    choice = input("Choice: ")
+    if choice == '1':
+        harvest_lists()
+    elif choice == '2':
+        process_queue()
+\end{lstlisting}
+
+\pagebreak
+
+\section*{Вывод}
+
+В ходе лабораторной работы был разработан полнофункциональный поисковый робот на языке Python, интегрированный с СУБД MongoDB. Реализованная двухэтапная архитектура (разделение на сбор ссылок и загрузку контента) позволила эффективно управлять очередью задач и гибко настраивать интенсивность запросов к каждому источнику. 
+
+Использование контрольных точек (checkpoint) обеспечило отказоустойчивость: робот успешно возобновляет работу после прерывания. Была внедрена система отслеживания изменений, исключающая дублирование данных и позволяющая актуализировать корпус документов без лишних затрат ресурсов. Итоговый робот полностью соответствует требованиям ТЗ и сформировал надежную базу данных для последующих этапов построения поискового движка.
+
+\begin{thebibliography}{99}
+\bibitem{Manning}
+Маннинг, Рагхаван, Шютце
+{\itshape Введение в информационный поиск} --- Издательский дом \enquote{Вильямс}, 2011. --- 528 с.
+
+\end{thebibliography}
+
+\pagebreak
+
+\end{document}

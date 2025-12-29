@@ -1,0 +1,12 @@
+db:
+  host: "localhost"
+  port: 27017
+  name: "search_engine_db"
+  collection_articles: "articles_final"
+  collection_queue: "task_queue"
+
+logic:
+  delay_min: 1.0
+  delay_max: 3.0
+  recrawl_interval: 86400
+  state_file: "crawler_state.json"
